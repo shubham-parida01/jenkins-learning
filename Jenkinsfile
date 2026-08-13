@@ -34,9 +34,31 @@ pipeline {
 
     post {
         success {
-            echo 'Pipeline completed successfully!'
+            httpRequest(
+                httpMode: 'POST',
+                contentType: 'APPLICATION_JSON',
+                url: credentials('slack-workflow-webhook'),
+                requestBody: '{
+                    "job_name": "${env.JOB_NAME}",
+                    "build_number": "${env.BUILD_NUMBER}",
+                    "status": "success",
+                    "message": "The Jenkins pipeline has completed successfully."
+                }'
+            )
+            echo 'Pipeline completed successfully.'
         }
         failure {
+            httpRequest(
+                httpMode: 'POST',
+                contentType: 'APPLICATION_JSON',
+                url: credentials('slack-workflow-webhook'),
+                requestBody: '{
+                    "job_name": "${env.JOB_NAME}",
+                    "build_number": "${env.BUILD_NUMBER}",
+                    "status": "failure",
+                    "message": "The Jenkins pipeline has failed."
+                }'
+            )
             echo 'Pipeline failed. Please check the logs for details.'
         }
 
