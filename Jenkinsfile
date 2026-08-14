@@ -2,13 +2,14 @@ pipeline {
     agent any
 
     stages {
+
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
 
-        stage("Install Dependencies") {
+        stage('Install Dependencies') {
             steps {
                 sh '''
                 python3 -m venv venv
@@ -23,49 +24,75 @@ pipeline {
             }
         }
 
-        stage('Build'){
+        stage('Build') {
             steps {
                 sh 'echo "Building the application..."'
-                sh './venv/bin/python app.py '
+                sh './venv/bin/python app.py'
             }
         }
 
+        stage('Generate Airflow Result') {
+            steps {
+                sh './venv/bin/python generate_result.py'
+                sh 'cat airflow_result.json'
+            }
+        }
+
+        stage('Flatten File Results') {
+            steps {
+                sh './venv/bin/python flatten_result.py airflow_result.json'
+                sh 'ls -la slack_payloads'
+            }
+        }
+
+        stage('Send Slack Notifications') {
+            steps {
+                script {
+
+                    withCredentials([
+                        string(
+                            credentialsId: 'slack-workflow-webhook',
+                            variable: 'SLACK_WEBHOOK_URL'
+                        )
+                    ]) {
+
+                        def files = sh(
+                            script: 'find slack_payloads -name "*.json" -type f',
+                            returnStdout: true
+                        ).trim()
+
+                        if (!files) {
+                            echo 'No Slack payloads found.'
+                            return
+                        }
+
+                        files.split('\n').each { file ->
+
+                            echo "Sending ${file} to Slack"
+
+                            def payload = readFile(file)
+
+                            httpRequest(
+                                httpMode: 'POST',
+                                contentType: 'APPLICATION_JSON',
+                                url: SLACK_WEBHOOK_URL,
+                                requestBody: payload
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 
     post {
+
         success {
-            withCredentials([string(credentialsId: 'slack-workflow-webhook', variable: 'SLACK_WEBHOOK_URL')]) {
-                httpRequest(
-                    httpMode: 'POST',
-                    contentType: 'APPLICATION_JSON',
-                    url: env.SLACK_WEBHOOK_URL,
-                    requestBody: """{
-                        "job_name": "${env.JOB_NAME}",
-                        "build_number": "${env.BUILD_NUMBER}",
-                        "status": "success",
-                        "message": "The Jenkins pipeline has completed successfully."
-                    }"""
-                )
-            }
-            
             echo 'Pipeline completed successfully.'
         }
+
         failure {
-            withCredentials([string(credentialsId: 'slack-workflow-webhook', variable: 'SLACK_WEBHOOK_URL')]) {
-            httpRequest(
-                httpMode: 'POST',
-                contentType: 'APPLICATION_JSON',
-                url: env.SLACK_WEBHOOK_URL,
-                requestBody: """{
-                    "job_name": "${env.JOB_NAME}",
-                    "build_number": "${env.BUILD_NUMBER}",
-                    "status": "failure",
-                    "message": "The Jenkins pipeline has failed."
-                }"""
-            )
             echo 'Pipeline failed. Please check the logs for details.'
         }
-        }
-
     }
 }
