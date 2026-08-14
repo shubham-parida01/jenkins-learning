@@ -14,15 +14,17 @@ def main():
 
     files = result.get("files", [])
 
-    for index, file in enumerate(files, start=1):
+    failed_count = 0
+
+    for file in files:
+
+        # Only create Slack payloads for failed files
+        if file.get("status") != "FAILED":
+            continue
 
         payload = {
-            "notification_type": (
-                "FILE_FAILURE"
-                if file["status"] == "FAILED"
-                else "FILE_SUCCESS"
-            ),
-            "status": file["status"],
+            "notification_type": "FILE_FAILURE",
+            "status": "FAILED",
             "dag_name": result["dag_name"],
             "run_id": result["run_id"],
             "folder_date": result["folder_date"],
@@ -33,12 +35,16 @@ def main():
             "error_message": file.get("error_message") or "",
         }
 
-        output_file = f"{output_dir}/file_{index}.json"
+        failed_count += 1
+
+        output_file = f"{output_dir}/file_failure_{failed_count}.json"
 
         with open(output_file, "w") as f:
             json.dump(payload, f, indent=2)
 
         print(f"Created {output_file}")
+
+    print(f"Created {failed_count} failure payload(s)")
 
 
 if __name__ == "__main__":
