@@ -68,16 +68,26 @@ pipeline {
 
                         files.split('\n').each { file ->
 
-                            echo "Sending ${file} to Slack"
-
                             def payload = readFile(file)
 
-                            httpRequest(
-                                httpMode: 'POST',
-                                contentType: 'APPLICATION_JSON',
-                                url: SLACK_WEBHOOK_URL,
-                                requestBody: payload
-                            )
+                            def data = new groovy.json.JsonSlurperClassic()
+                                .parseText(payload)
+
+                            if (data.status == 'FAILED') {
+
+                                echo "Sending FAILED notification for ${data.file_name}"
+
+                                httpRequest(
+                                    httpMode: 'POST',
+                                    contentType: 'APPLICATION_JSON',
+                                    url: SLACK_WEBHOOK_URL,
+                                    requestBody: payload
+                                )
+
+                            } else {
+
+                                echo "Skipping successful file: ${data.file_name}"
+                            }
                         }
                     }
                 }
