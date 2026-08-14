@@ -46,53 +46,43 @@ pipeline {
         }
 
         stage('Send Slack Notifications') {
-            steps {
-                script {
+    steps {
+        script {
 
-                    withCredentials([
-                        string(
-                            credentialsId: 'slack-workflow-webhook',
-                            variable: 'SLACK_WEBHOOK_URL'
-                        )
-                    ]) {
+            withCredentials([
+                string(
+                    credentialsId: 'slack-workflow-webhook',
+                    variable: 'SLACK_WEBHOOK_URL'
+                )
+            ]) {
 
-                        def files = sh(
-                            script: 'find slack_payloads -name "*.json" -type f',
-                            returnStdout: true
-                        ).trim()
+                def files = sh(
+                    script: 'find slack_payloads -name "*.json" -type f',
+                    returnStdout: true
+                ).trim()
 
-                        if (!files) {
-                            echo 'No Slack payloads found.'
-                            return
-                        }
+                if (!files) {
+                    echo 'No failed files. No Slack notifications required.'
+                    return
+                }
 
-                        files.split('\n').each { file ->
+                files.split('\n').each { file ->
 
-                            def payload = readFile(file)
+                    echo "Sending failure notification: ${file}"
 
-                            def data = new groovy.json.JsonSlurperClassic()
-                                .parseText(payload)
+                    def payload = readFile(file)
 
-                            if (data.status == 'FAILED') {
-
-                                echo "Sending FAILED notification for ${data.file_name}"
-
-                                httpRequest(
-                                    httpMode: 'POST',
-                                    contentType: 'APPLICATION_JSON',
-                                    url: SLACK_WEBHOOK_URL,
-                                    requestBody: payload
-                                )
-
-                            } else {
-
-                                echo "Skipping successful file: ${data.file_name}"
-                            }
-                        }
-                    }
+                    httpRequest(
+                        httpMode: 'POST',
+                        contentType: 'APPLICATION_JSON',
+                        url: SLACK_WEBHOOK_URL,
+                        requestBody: payload
+                    )
                 }
             }
         }
+    }
+}
     }
 
     post {
