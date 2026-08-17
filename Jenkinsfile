@@ -135,11 +135,25 @@ pipeline {
         stage('Fail On Errors') {
             steps {
                 script {
-                    def result = new groovy.json.JsonSlurper().parseText(readFile(RESULT_JSON))
-                    if (result.has_errors) {
-                        error("Found ${result.critical_error_count} critical error(s) for load_date=${result.load_date} (DEMO DATA)")
+                    def hasErrors = sh(
+                        script: "./venv/bin/python -c \"import json; print(json.load(open('${RESULT_JSON}'))['has_errors'])\"",
+                        returnStdout: true
+                    ).trim()
+
+                    def errorCount = sh(
+                        script: "./venv/bin/python -c \"import json; print(json.load(open('${RESULT_JSON}'))['critical_error_count'])\"",
+                        returnStdout: true
+                    ).trim()
+
+                    def loadDate = sh(
+                        script: "./venv/bin/python -c \"import json; print(json.load(open('${RESULT_JSON}'))['load_date'])\"",
+                        returnStdout: true
+                    ).trim()
+
+                    if (hasErrors == 'True') {
+                        error("Found ${errorCount} critical error(s) for load_date=${loadDate} (DEMO DATA)")
                     } else {
-                        echo "No critical errors for load_date=${result.load_date} (DEMO DATA)"
+                        echo "No critical errors for load_date=${loadDate} (DEMO DATA)"
                     }
                 }
             }
