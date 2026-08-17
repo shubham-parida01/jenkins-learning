@@ -17,9 +17,8 @@ pipeline {
     }
 
     environment {
-        MONITOR_DIR = 'monitoring'
-        RESULT_JSON = 'monitoring/airflow_result.json'
-        SLACK_DIR   = 'monitoring/slack_payloads'
+        RESULT_JSON = 'airflow_result.json'
+        SLACK_DIR   = 'slack_payloads'
     }
 
     stages {
@@ -33,12 +32,25 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 sh '''
-                cd ${MONITOR_DIR}
                 python3 -m venv venv
                 ./venv/bin/pip install --upgrade pip -q
+                if [ -f requirements.txt ]; then
+                    ./venv/bin/pip install -r requirements.txt -q
+                fi
                 '''
-                // No requirements.txt needed for the demo — generate_result.py
-                // and flatten_result.py only use the Python standard library.
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                sh '''
+                if [ -f test_app.py ]; then
+                    ./venv/bin/pip install pytest -q
+                    ./venv/bin/python -m pytest test_app.py -v
+                else
+                    echo 'No test_app.py found — skipping tests.'
+                fi
+                '''
             }
         }
 
@@ -54,11 +66,10 @@ pipeline {
 
                     env.GENERATE_EXIT = sh(
                         script: """
-                            cd ${MONITOR_DIR}
                             ./venv/bin/python generate_result.py \
                               --load-date '${params.LOAD_DATE}' \
                               --environment '${params.ENVIRONMENT}' \
-                              --output 'airflow_result.json' \
+                              --output '${RESULT_JSON}' \
                               ${demoFlag}
                         """,
                         returnStatus: true
@@ -71,9 +82,8 @@ pipeline {
         stage('Flatten File Results') {
             steps {
                 sh """
-                cd ${MONITOR_DIR}
-                ./venv/bin/python flatten_result.py 'airflow_result.json' --output-dir 'slack_payloads'
-                ls -la slack_payloads || true
+                ./venv/bin/python flatten_result.py '${RESULT_JSON}' --output-dir '${SLACK_DIR}'
+                ls -la ${SLACK_DIR} || true
                 """
             }
         }
@@ -144,8 +154,8 @@ pipeline {
             echo 'Demo pipeline failed — critical errors found in simulated data. See airflow_result.json / slack_payloads/.'
         }
         always {
-            archiveArtifacts artifacts: 'monitoring/airflow_result.json', allowEmptyArchive: true
-            archiveArtifacts artifacts: 'monitoring/slack_payloads/*.json', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'airflow_result.json', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'slack_payloads/*.json', allowEmptyArchive: true
         }
     }
 }
