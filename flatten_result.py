@@ -2,9 +2,23 @@
 """
 flatten_result.py
 
-Reads airflow_result.json and writes one Slack-ready JSON payload per
-error into --output-dir. Works the same whether the input came from
-the real generate_result.py or the demo version.
+Reads airflow_result.json and writes one flat, single-level Slack-ready
+JSON payload per error into --output-dir. Works the same whether the
+input came from the real generate_result.py or the demo version.
+
+Output schema (one file per error):
+{
+  "run_id": "...",
+  "file_name": "...",
+  "platform": "...",
+  "notification_type": "...",
+  "file_type": "...",
+  "stage": "...",
+  "status": "...",
+  "folder_date": "...",
+  "dag_name": "...",
+  "error_message": "..."
+}
 
 Usage:
     python3 flatten_result.py airflow_result.json --output-dir slack_payloads
@@ -16,32 +30,34 @@ import os
 import sys
 
 
-def build_slack_payload(dag_id, load_date, environment, error, index, total):
+def build_slack_payload(dag_id, load_date, environment, dag_run, error):
     error_type = error.get("error_type", "unknown")
-    severity = error.get("severity", "critical").upper()
-    message = error.get("message", "No message provided")
 
     if error_type == "dag_task":
-        detail = f"*Task:* `{error.get('task_id', 'unknown')}`"
+        file_name = error.get("task_id", "unknown")
+        platform = "airflow"
+        file_type = "dag_task"
     elif error_type == "file_operation":
-        detail = (
-            f"*File:* `{error.get('object_name', 'unknown')}`\n"
-            f"*Type:* {error.get('file_type', 'unknown')} / "
-            f"*Platform:* {error.get('platform', 'unknown')}"
-        )
+        file_name = error.get("object_name", "unknown")
+        platform = error.get("platform", "unknown")
+        file_type = error.get("file_type", "unknown")
     else:
-        detail = ""
+        file_name = "unknown"
+        platform = "unknown"
+        file_type = "unknown"
 
-    text = (
-        f":rotating_light: *{severity} — {dag_id}* "
-        f"({index}/{total})\n"
-        f"*Load date:* {load_date}  *Env:* {environment}\n"
-        f"*Error type:* {error_type}\n"
-        f"{detail}\n"
-        f"*Message:* {message}"
-    )
-
-    return {"text": text}
+    return {
+        "run_id": error.get("run_id") or dag_run.get("run_id", "unknown"),
+        "file_name": file_name,
+        "platform": platform,
+        "notification_type": error_type,
+        "file_type": file_type,
+        "stage": environment,
+        "status": dag_run.get("state", "unknown"),
+        "folder_date": load_date,
+        "dag_name": dag_id,
+        "error_message": error.get("message", "No message provided"),
+    }
 
 
 def main():
@@ -73,15 +89,16 @@ def main():
     dag_id = result.get("dag_id", "unknown_dag")
     load_date = result.get("load_date", "unknown")
     environment = result.get("environment", "unknown")
+    dag_run = result.get("dag_run", {})
 
     for i, error in enumerate(errors, start=1):
-        payload = build_slack_payload(dag_id, load_date, environment, error, i, len(errors))
+        payload = build_slack_payload(dag_id, load_date, environment, dag_run, error)
         out_path = os.path.join(args.output_dir, f"error_{i:03d}.json")
         with open(out_path, "w") as f:
             json.dump(payload, f, indent=2)
         print(f"[flatten] Wrote {out_path}")
 
-    print(f"[flatten] {len(errors)} payload(s) written to {args.output_dir}/")
+    print(f"[flatten] {len(errors)} payload(s) written to {args.output_dir}/ (will be sent one at a time)")
 
 
 if __name__ == "__main__":
