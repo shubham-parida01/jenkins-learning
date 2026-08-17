@@ -135,7 +135,7 @@ pipeline {
         stage('Fail On Errors') {
             steps {
                 script {
-                    def result = readJSON file: RESULT_JSON
+                    def result = new groovy.json.JsonSlurper().parseText(readFile(RESULT_JSON))
                     if (result.has_errors) {
                         error("Found ${result.critical_error_count} critical error(s) for load_date=${result.load_date} (DEMO DATA)")
                     } else {
